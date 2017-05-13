@@ -13,6 +13,7 @@
 #include <stdlib.h>
 
 #define IMG_SIZE NUM_COLORS*OSC_CAM_MAX_IMAGE_WIDTH*OSC_CAM_MAX_IMAGE_HEIGHT
+#define NUM_COL		2
 
 const int nc = OSC_CAM_MAX_IMAGE_WIDTH;
 const int nr = OSC_CAM_MAX_IMAGE_HEIGHT;
@@ -37,6 +38,52 @@ void Dilate_3x3(int InIndex, int OutIndex);
 void DetectRegions();
 void DrawBoundingBoxes();
 
+void ChangeDetection() {
+	uint8 FrgCol[NUM_COL][3] = {{28, 38, 135}, {77, 59, 52}};
+	int r, c, frg, p;
+
+	memset(data.u8TempImage[INDEX0], 0, IMG_SIZE);
+
+	//loop over the rows
+	for(r = 0; r < nr*nc; r += nc)
+	{
+		//loop over the columns
+		for(c = 0; c < nc; c++)
+		{
+			//loop over the different Frg colors and find smallest difference
+			int MinDif = 1 << 30;
+			int MinInd = 0;
+
+			for(frg = 0; frg < NUM_COL; frg++)
+			{
+				int Dif = 0;
+				//loop over the color planes (r, g, b) and sum up the difference
+				for(p = 1; p < NUM_COLORS; p++)
+				{
+					Dif += abs((int) data.u8TempImage[THRESHOLD][(r+c)*NUM_COLORS+p]-
+					(int) FrgCol[frg][p]);
+				}
+				if(Dif < MinDif)
+				{
+					MinDif = Dif;
+					MinInd = frg;
+				}
+			}
+			//if the difference is smaller than threshold value
+			if(MinDif < data.ipc.state.nThreshold)
+			{
+				//set pixel value to 255 in THRESHOLD image for further processing
+				//(we use only the first third of the image buffer)
+				data.u8TempImage[INDEX1][(r+c)] = 255;
+				//set pixel value to Frg color in BACKGROUND image for visualization
+				for(p = 0; p < NUM_COLORS; p++)
+				{
+					data.u8TempImage[BACKGROUND][(r+c)*NUM_COLORS+p] = FrgCol[MinInd][p];
+				}
+			}
+		}
+	}
+}
 
 void ResetProcess()
 {
@@ -55,10 +102,14 @@ void ProcessFrame() {
 	} else {
 		unsigned char Threshold = OtsuThreshold(SENSORIMG);
 
-		Binarize(Threshold);
+		memcpy(data.u8TempImage[THRESHOLD], data.u8TempImage[SENSORIMG], IMG_SIZE);
 
-		Erode_3x3(THRESHOLD, INDEX0);
-		Dilate_3x3(INDEX0, THRESHOLD);
+		//Binarize(Threshold);
+
+		//Erode_3x3(THRESHOLD, INDEX0);
+		//Dilate_3x3(INDEX0, THRESHOLD);
+
+		ChangeDetection();
 
 		DetectRegions();
 
